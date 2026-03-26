@@ -946,31 +946,31 @@ function saveProds(){
   saveLS("pnm_prods",prods);
   var batch=db.batch();
   prods.forEach(function(p){batch.set(db.collection("pnm_prods").doc(String(p.id)),p);});
-  batch.commit().catch(function(e){console.warn(e);});
+  batch.commit().then(bumpVersion).catch(function(e){console.warn(e);});
 }
 function saveAdult(){
   saveLS("pnm_adult",aProds);
   var batch=db.batch();
   aProds.forEach(function(p){batch.set(db.collection("pnm_adult").doc(String(p.id)),p);});
-  batch.commit().catch(function(e){console.warn(e);});
+  batch.commit().then(bumpVersion).catch(function(e){console.warn(e);});
 }
 function saveUsers(){
   saveLS("pnm_users",users);
   var batch=db.batch();
   users.forEach(function(u){batch.set(db.collection("pnm_users").doc(String(u.email)),u);});
-  batch.commit().catch(function(e){console.warn(e);});
+  batch.commit().then(bumpVersion).catch(function(e){console.warn(e);});
 }
 function saveSlides(){
   saveLS("pnm_slides",slides);
   var batch=db.batch();
   slides.forEach(function(s){batch.set(db.collection("pnm_slides").doc(String(s.id)),s);});
-  batch.commit().catch(function(e){console.warn(e);});
+  batch.commit().then(bumpVersion).catch(function(e){console.warn(e);});
 }
 function saveRewards(){
   saveLS("pnm_rewards",rewards);
   var batch=db.batch();
   rewards.forEach(function(r){batch.set(db.collection("pnm_rewards").doc(String(r.id)),r);});
-  batch.commit().catch(function(e){console.warn(e);});
+  batch.commit().then(bumpVersion).catch(function(e){console.warn(e);});
 }
 function saveCfg(key,val){
   localStorage.setItem("pnm_"+key,typeof val==="string"?val:JSON.stringify(val));
@@ -1058,48 +1058,79 @@ function showV(id){
 }
 
 // ═══ FIREBASE SYNC ═══
-// Loads data from Firebase ONCE on page load, silently updates localStorage cache
-// UI is NEVER re-rendered by Firebase - only by user actions
-function initFirebase(){
-  var lastSync=parseInt(localStorage.getItem("pnm_lastsync")||"0");
-  var now=Date.now();
-  // Only sync from Firebase if last sync was more than 30 seconds ago
-  if(now-lastSync < 30000) return;
-  localStorage.setItem("pnm_lastsync",String(now));
+var _syncTimer=null;
+var _localVer=0;
 
+// Bump version on Firebase whenever data changes — others detect it and reload
+function bumpVersion(){
+  fsSet("pnm_config","version",{key:"version",value:Date.now()});
+}
+
+function initFirebase(){
+  // First load — pull everything from Firebase into localStorage, then render once
   fsGet("pnm_prods",function(arr){
     if(arr.length){prods=arr;saveLS("pnm_prods",prods);}
     else{dProds().forEach(function(p){fsSet("pnm_prods",p.id,p);});}
+    renderH();renderP();updStats();
   });
   fsGet("pnm_adult",function(arr){
     if(arr.length){aProds=arr;saveLS("pnm_adult",aProds);}
     else{dAdult().forEach(function(p){fsSet("pnm_adult",p.id,p);});}
+    renderA();
   });
   fsGet("pnm_users",function(arr){
-    if(!arr.length)return;
-    users=arr;saveLS("pnm_users",users);
-    if(curUser){
-      for(var i=0;i<users.length;i++){
-        if(users[i].email===curUser.email&&users[i].senha===curUser.senha){curUser=users[i];break;}
+    if(arr.length){
+      users=arr;saveLS("pnm_users",users);
+      if(curUser){
+        for(var i=0;i<users.length;i++){
+          if(users[i].email===curUser.email&&users[i].senha===curUser.senha){curUser=users[i];break;}
+        }
+        localStorage.setItem("pnm_user",JSON.stringify(curUser));
       }
-      localStorage.setItem("pnm_user",JSON.stringify(curUser));
     }
+    updStats();renderUsers();
   });
   fsGet("pnm_slides",function(arr){
     if(arr.length){slides=arr.sort(function(a,b){return a.id-b.id;});saveLS("pnm_slides",slides);}
     else{dSlides().forEach(function(s){fsSet("pnm_slides",s.id,s);});}
+    renderSS();resetST();
   });
   fsGet("pnm_rewards",function(arr){
     if(arr.length){rewards=arr;saveLS("pnm_rewards",rewards);}
     else{dRewards().forEach(function(r){fsSet("pnm_rewards",r.id,r);});}
+    renderRewardsGrid();
   });
   fsGet("pnm_config",function(arr){
     arr.forEach(function(item){
-      if(item.key==="trocas"&&item.value)  {trocasTxt=item.value;localStorage.setItem("pnm_trocas",trocasTxt);}
+      if(item.key==="trocas"&&item.value){trocasTxt=item.value;localStorage.setItem("pnm_trocas",trocasTxt);}
       if(item.key==="homecats"&&item.value){homeCats=item.value;saveLS("pnm_homecats",homeCats);}
-      if(item.key==="mgravatar"&&item.value){mgrAvatar=item.value;localStorage.setItem("pnm_mgrav",mgrAvatar);}
+      if(item.key==="mgravatar"&&item.value){mgrAvatar=item.value;localStorage.setItem("pnm_mgrav",mgrAvatar);applyMgrAvatar();}
+      if(item.key==="version"&&item.value){_localVer=item.value;}
     });
+    renderHomeCats();
   });
+
+  // Poll version every 15 seconds — only reload data if version changed
+  _syncTimer=setInterval(function(){
+    db.collection("pnm_config").doc("version").get()
+      .then(function(doc){
+        if(!doc.exists)return;
+        var remoteVer=doc.data().value||0;
+        if(remoteVer<=_localVer)return; // nothing changed
+        _localVer=remoteVer;
+        // Data changed — reload silently then update UI once
+        fsGet("pnm_prods",function(arr){if(arr.length){prods=arr;saveLS("pnm_prods",prods);renderH();renderP();updStats();}});
+        fsGet("pnm_adult",function(arr){if(arr.length){aProds=arr;saveLS("pnm_adult",aProds);renderA();}});
+        fsGet("pnm_users",function(arr){
+          if(!arr.length)return;
+          users=arr;saveLS("pnm_users",users);
+          if(curUser){for(var i=0;i<users.length;i++){if(users[i].email===curUser.email&&users[i].senha===curUser.senha){curUser=users[i];localStorage.setItem("pnm_user",JSON.stringify(curUser));break;}}}
+          updStats();renderUsers();
+        });
+        fsGet("pnm_slides",function(arr){if(arr.length){slides=arr.sort(function(a,b){return a.id-b.id;});saveLS("pnm_slides",slides);renderSS();resetST();}});
+        fsGet("pnm_rewards",function(arr){if(arr.length){rewards=arr;saveLS("pnm_rewards",rewards);renderRewardsGrid();}});
+      }).catch(function(e){console.warn("version poll:",e);});
+  },15000);
 }
 function applyMgrAvatar(){
   var ma=document.getElementById("mgr-av");
@@ -1413,13 +1444,22 @@ function renderMgr(){renderProdTbl();updStats();renderMgrSlides();renderUsers();
 // ═══ USERS ═══
 function renderUsers(){
   var el=document.getElementById("users-tbl");if(!el)return;
-  if(!users.length){el.innerHTML="<p style=\"color:var(--gr);text-align:center;padding:20px\">Nenhum cliente.</p>";return;}
+  if(!users.length){el.innerHTML="<p style=\"color:var(--gr);text-align:center;padding:20px\">Nenhum cliente cadastrado.</p>";return;}
   var rows=users.map(function(u){
-    return "<tr><td><strong>"+(u.nome||"")+" "+(u.sob||"")+"</strong></td>"
-      +"<td>"+(u.email||"")+"</td><td>"+(u.tel||"—")+"</td>"
-      +"<td>"+(u.data||"—")+"</td><td>"+(u.addr||"—")+"</td></tr>";
+    var av=u.avatar
+      ?"<img src=\""+u.avatar+"\" style=\"width:36px;height:36px;border-radius:50%;object-fit:cover;\">"
+      :"<div style=\"width:36px;height:36px;border-radius:50%;background:var(--pkp);display:flex;align-items:center;justify-content:center;font-size:18px\">😊</div>";
+    return "<tr>"
+      +"<td style=\"display:flex;align-items:center;gap:10px\">"+av+"<div><strong>"+(u.nome||"")+" "+(u.sob||"")+"</strong><div style=\"font-size:11px;color:var(--gr)\">"+(u.cpf||"")+"</div></div></td>"
+      +"<td>"+(u.email||"")+"</td>"
+      +"<td>"+(u.tel||"—")+"</td>"
+      +"<td>"+(u.data||"—")+"</td>"
+      +"<td>"+(u.addr||"—")+"</td>"
+      +"<td><span style=\"background:var(--pkp);color:var(--pkd);padding:3px 10px;border-radius:50px;font-size:12px;font-weight:700\">"+(u.pts||0)+" pts</span></td>"
+      +"</tr>";
   }).join("");
-  el.innerHTML="<table class=\"atbl\"><thead><tr><th>Nome</th><th>E-mail</th><th>Tel</th><th>Nasc.</th><th>Endereço</th></tr></thead><tbody>"+rows+"</tbody></table>";
+  el.innerHTML="<div style=\"margin-bottom:12px;font-size:13px;color:var(--gr)\">Total: <strong style=\"color:var(--pk)\">"+users.length+"</strong> cliente(s)</div>"
+    +"<table class=\"atbl\"><thead><tr><th>Cliente</th><th>E-mail</th><th>Tel</th><th>Nasc.</th><th>Endereço</th><th>Pontos</th></tr></thead><tbody>"+rows+"</tbody></table>";
 }
 
 // ═══ AVATAR ═══
@@ -1481,7 +1521,10 @@ function registerUser(){
   if(!nome||!email||!cpf||!senha){showToast("Preencha os campos!");return;}
   if(senha!==senha2){showToast("Senhas não coincidem!");return;}
   if(senha.length<8){showToast("Senha: mín. 8 caracteres!");return;}
-  for(var i=0;i<users.length;i++){if(users[i].email===email){showToast("E-mail já cadastrado!");return;}}
+  for(var i=0;i<users.length;i++){
+    if(users[i].email===email){showToast("E-mail já cadastrado!");return;}
+    if(users[i].cpf&&users[i].cpf===cpf){showToast("CPF já cadastrado!");return;}
+  }
   if(data){var ag=(new Date()-new Date(data))/(1000*60*60*24*365.25);if(ag<18){showToast("Necessário 18+ anos!");return;}}
   var u={nome:nome,sob:sob,email:email,cpf:cpf,senha:senha,tel:tel,addr:addr,data:data,
          pts:0,lastDaily:null,fidNick:"Membro",fidBg:null,avatar:null};
