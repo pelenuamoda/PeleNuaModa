@@ -896,6 +896,8 @@ footer a{color:var(--pkl);text-decoration:none;cursor:pointer;}
 
 
 
+
+
 const SUPA_URL='https://brckyuxjufcchribzefe.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJyY2t5dXhqdWZjY2hyaWJ6ZWZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1OTUyNTQsImV4cCI6MjA5MDE3MTI1NH0.-Mt-GL3mjuVn9lifuGYI2oPEjq2fE6Gh7FLZEb-lr9g';
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
@@ -2146,6 +2148,22 @@ function renderReviews(prodId){
 }
 
 // ══ INIT ══
+
+async function addCat(){
+  const name=(document.getElementById('new-cat-name')||{}).value;
+  const raw_key=(document.getElementById('new-cat-key')||{}).value;
+  const n=(name||'').trim();
+  const key=(raw_key||'').trim().toLowerCase().replace(/ /g,'-');
+  if(!n||!key){showToast('Preencha nome e chave!');return;}
+  if(homeCats.find(function(c){return c.key===key;})){showToast('Chave já existe!');return;}
+  homeCats.push({key:key,label:n});
+  await setCfg('homecats',JSON.stringify(homeCats));
+  var mn=document.getElementById('new-cat-name');if(mn)mn.value='';
+  var mk=document.getElementById('new-cat-key');if(mk)mk.value='';
+  renderCatsEditList();renderHomeCats();renderProductCats();populateCatSelects();
+  showToast('✅ Categoria adicionada!');
+}
+
 (function(){
   var cnt=cart.reduce(function(s,x){return s+x.qty;},0);
   document.getElementById('cart-c').textContent=cnt;
@@ -2226,9 +2244,26 @@ function renderPiSubCats(isAdult){
   });
 }
 
+// ══ CATEGORIA HELPERS ══
+function toggleCatChk(cb,color){const lbl=cb.parentElement;if(cb.checked){lbl.style.background=color;lbl.style.color='#fff';}else{lbl.style.background='transparent';lbl.style.color=lbl.closest('#ep-cats-wrap')?'#fff':'var(--gr)';}}
 
+function getCheckedCats(wrapId){const wrap=document.getElementById(wrapId);if(!wrap)return[];return Array.from(wrap.querySelectorAll('input:checked')).map(cb=>cb.value);}
 
+function setCatCheckboxes(wrapId,selected){
+  const wrap=document.getElementById(wrapId);if(!wrap)return;
+  wrap.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.checked=selected.includes(cb.value);
+    toggleCatChk(cb,cb.parentElement.style.borderColor||catColors[0]);
+  });
+}
 
+function toggleCatChkEl(lbl){
+  var cb=lbl.querySelector('input');if(!cb)return;
+  var color=lbl.dataset.color||'var(--pk)';
+  var inDark=!!lbl.closest('#ep-cats-wrap');
+  if(cb.checked){lbl.style.background=color;lbl.style.color='#fff';}
+  else{lbl.style.background='transparent';lbl.style.color=inDark?'#fff':'var(--gr)';}
+}
 
 
 
