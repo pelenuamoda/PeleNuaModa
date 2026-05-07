@@ -83,7 +83,7 @@ nav{display:flex;gap:3px;align-items:center;flex-wrap:wrap;}
 .slide{display:none;position:relative;min-height:400px;align-items:center;padding:70px 60px;background:linear-gradient(135deg,#3d0020,#1a0a10);}
 .slide.active{display:flex;}
 .slide-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
-.slide-overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(26,10,16,.88) 35%,rgba(26,10,16,.15));}
+.slide-overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(26,10,16,.88) 35%,rgba(26,10,16,.04));}
 .slide.pos-center{justify-content:center;text-align:center;}.slide.pos-center .slide-overlay{background:linear-gradient(180deg,rgba(26,10,16,.45) 0%,rgba(26,10,16,.82) 100%);}
 .slide.pos-right{justify-content:flex-end;}.slide.pos-right .slide-overlay{background:linear-gradient(270deg,rgba(26,10,16,.9) 35%,rgba(26,10,16,.1));}
 .slide-content{position:relative;z-index:2;max-width:520px;}
@@ -145,6 +145,7 @@ body.gm .sebar{display:flex;}
 .ciinfo{flex:1;}.ciinfo h3{font-size:15px;font-weight:700;margin-bottom:3px;}.ciinfo p{font-size:12px;color:var(--gr);}
 .cip{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--pk);}
 .crm{background:var(--pkp);color:var(--pk);border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:15px;}
+.cbuy{background:linear-gradient(135deg,var(--pk),var(--pkd));color:#fff;border:none;padding:6px 14px;border-radius:50px;font-size:12px;font-weight:700;font-family:'Raleway',sans-serif;cursor:pointer;white-space:nowrap;}
 .ctot{background:#fff;border-radius:16px;padding:22px 28px;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--sh);margin-top:8px;}
 .ctot .tl{font-size:17px;font-weight:600;color:var(--gr);}
 .ctot .tv{font-family:'Playfair Display',serif;font-size:30px;font-weight:900;color:var(--pk);}
@@ -1624,7 +1625,7 @@ function renderCart(){
   if(!cart.length){el.innerHTML='<div class="empty"><div class="eico">🛒</div><h2>Carrinho vazio</h2><p>Adicione itens!</p></div>';const b=document.createElement('button');b.className='byes';b.style.marginTop='18px';b.textContent='Ver Produtos';b.onclick=function(){showPage('products');};el.querySelector('.empty').appendChild(b);return;}
   const allP=[...prods,...aProds];
   const total=cart.reduce((s,x)=>{const p=allP.find(q=>String(q.id)===String(x.id));return s+(p?p.price*x.qty:0);},0);
-  el.innerHTML=cart.map(x=>{const p=allP.find(q=>String(q.id)===String(x.id));if(!p)return'';const img=p.imgData?'<img src="'+p.imgData+'">':(p.emoji||'');return'<div class="citem"><div class="ciimg">'+img+'</div><div class="ciinfo"><h3>'+p.name+'</h3><p>'+p.cat+' · Qtd: '+x.qty+'</p></div><span class="cip">R$ '+(p.price*x.qty).toFixed(2).replace('.',',')+'</span><button class="crm" onclick="removeCart('+x.id+')">&#10005;</button></div>';}).join('')+
+  el.innerHTML=cart.map(x=>{const p=allP.find(q=>String(q.id)===String(x.id));if(!p)return'';const img=p.imgData?'<img src="'+p.imgData+'">':(p.emoji||'');return'<div class="citem"><div class="ciimg">'+img+'</div><div class="ciinfo"><h3>'+p.name+'</h3><p>'+p.cat+' · Qtd: '+x.qty+'</p></div><span class="cip">R$ '+(p.price*x.qty).toFixed(2).replace('.',',')+'</span><button class="cbuy" title="Comprar só este item" onclick="checkout([{id:'+x.id+',qty:'+x.qty+'}])">Comprar</button><button class="crm" onclick="removeCart('+x.id+')">&#10005;</button></div>';}).join('')+
     '<div class="ctot"><div><div class="tl">Total</div><div class="tv">R$ '+total.toFixed(2).replace('.',',')+'</div></div></div>'+
     '<button class="bchk" onclick="checkout()">Finalizar Compra</button>';
 }
@@ -1708,26 +1709,36 @@ async function confirmPasswordReset(){
     showToast('Erro de conexao. Tente novamente.','error');
   }
 }
-async function checkout(){
-  if(!curUser){showToast('Faça login primeiro!');showPage('register');return;}if(!cart.length){showToast('Carrinho vazio!');return;}showToast('Registrando pedido...');
-  let orderCode;try{let seqRaw=await getCfg('order_seq');let seq=(seqRaw&&!isNaN(parseInt(seqRaw)))?parseInt(seqRaw):1;orderCode='PNM'+String(seq).padStart(6,'0');await setCfg('order_seq',String(seq+1));}catch(e){orderCode='PNM'+String(Date.now()).slice(-6);}
-  const allPC=[...prods,...aProds];const pedido={id:Date.now(),orderCode:orderCode,userId:curUser.email,nomeCliente:(curUser.nome||'')+' '+(curUser.sob||''),endereco:curUser.addr||'',tel:curUser.tel||'',items:cart.map(x=>{const p=allPC.find(q=>String(q.id)===String(x.id))||{};return{id:x.id,name:p.name||'Produto',qty:x.qty,price:p.price||0};}),total:cart.reduce((s,x)=>{const p=allPC.find(q=>String(q.id)===String(x.id));return s+(p?p.price*x.qty:0);},0),brinde:pendingReward?pendingReward.name:null,status:'pendente',createdAt:new Date().toISOString()};
-  try{await sb.from('pnm_pedidos').upsert({id:pedido.id,email:curUser.email,data:pedido});}catch(e){console.warn(e);}
-  pedidos.unshift(pedido);cart=[];saveLS('pnm_cart',cart);document.getElementById('cart-c').textContent=0;const c2=document.getElementById('cart-c2');if(c2)c2.textContent=0;pendingReward=null;localStorage.removeItem('pnm_pendingReward');
-  pedidosLoading=false;pedidosError=null;
-  showToast('Abrindo pagamento...','loading');
-  var stripeOk=await startStripeCheckout(pedido);
-  if(!stripeOk){showToast('Erro ao abrir o pagamento. Tente novamente.','error');renderPedidos();}
+// itemsOverride: [{id,qty}] para checkout parcial (um item); null = carrinho completo
+async function checkout(itemsOverride){
+  if(!curUser){showToast('Faça login primeiro!');showPage('register');return;}
+  var itemsToBuy=itemsOverride||cart;
+  if(!itemsToBuy.length){showToast('Carrinho vazio!');return;}
+  if(!curUser.token){showToast('Sessão inválida. Faça login novamente.','error');showPage('register');return;}
+  showToast('Registrando pedido...','loading');
+  try{
+    var d=await efPost('place-order',{token:curUser.token,items:itemsToBuy.map(function(x){return{id:x.id,qty:x.qty};}),pendingReward:pendingReward?pendingReward.name:null});
+    if(!d.ok){showToast(d.error||'Erro ao registrar pedido.','error');return;}
+    var pedido=d.pedido;
+    // Só limpa carrinho/brinde se for checkout completo
+    if(!itemsOverride){
+      cart=[];saveLS('pnm_cart',cart);
+      document.getElementById('cart-c').textContent=0;
+      var c2=document.getElementById('cart-c2');if(c2)c2.textContent=0;
+      pendingReward=null;localStorage.removeItem('pnm_pendingReward');
+    }
+    pedidos.unshift(pedido);pedidosLoading=false;pedidosError=null;
+    showToast('Abrindo pagamento...','loading');
+    var stripeOk=await startStripeCheckout(pedido);
+    if(!stripeOk){showToast('Erro ao abrir o pagamento. Tente novamente.','error');renderPedidos();}
+  }catch(e){console.warn('checkout:',e);showToast('Erro ao registrar pedido.','error');}
 }
 
 async function loadPedidos(){
-  if(!curUser||typeof curUser.email!=='string'||!curUser.email){
-    pedidos=[];
-    return;
-  }
-  var res=await sb.from('pnm_pedidos').select('data').eq('email',curUser.email);
-  if(res.error){console.warn('loadPedidos:',res.error);throw new Error(res.error.message);}
-  pedidos=res.data?res.data.map(function(r){return r.data;}).sort(function(a,b){return b.id-a.id;}).filter(Boolean):[];
+  if(!curUser||typeof curUser.email!=='string'||!curUser.email||!curUser.token){pedidos=[];return;}
+  var d=await efPost('list-orders',{token:curUser.token});
+  if(!d.ok)throw new Error(d.error||'Erro ao carregar pedidos.');
+  pedidos=d.pedidos||[];
 }
 function renderPedidos(){
   var el=document.getElementById('pedidos-list');
@@ -1757,36 +1768,43 @@ function renderPedidos(){
     el.querySelector('.empty').appendChild(b);
     return;
   }
-  var html='';
-  pedidos.forEach(function(p){
-    if(!p||!p.id)return;
+  // Separa ativos de cancelados/recusados
+  var ativos=pedidos.filter(function(p){return p&&p.id&&p.status!=='cancelado'&&p.status!=='recusado';});
+  var inativos=pedidos.filter(function(p){return p&&p.id&&(p.status==='cancelado'||p.status==='recusado');});
+  function buildPedidoCard(p){
     var total='R$ '+Number(p.total||0).toFixed(2).replace('.',',');
     var date=p.createdAt?new Date(p.createdAt).toLocaleDateString('pt-BR'):'—';
-    var itemsTxt=(p.items||[]).map(function(i){return i.name+' (x'+i.qty+')';}).join(', ');
-    var brindeTxt=p.brinde?' | Brinde: '+p.brinde:'';
     var code=p.orderCode||('PNM'+String(p.id).slice(-6));
-    var endTxt=p.endereco?'%0AEndere%C3%A7o: '+encodeURIComponent(p.endereco):'';
     var waMsgRaw='Ol%C3%A1 Gerusa! Tenho uma d%C3%BAvida sobre meu pedido '+code+'.';
     var sc=p.status==='entregue'?'#22c55e':p.status==='pago'?'#3b82f6':(p.status==='cancelado'||p.status==='recusado')?'#ef4444':'#f59e0b';
     var sl=p.status==='entregue'?'Entregue':p.status==='pago'?'Pago':p.status==='cancelado'?'Cancelado':p.status==='recusado'?'Recusado':'Pendente';
     var itemsHtml=(p.items||[]).map(function(i){return '<div style="font-size:13px;color:var(--bk);padding:3px 0">'+i.name+' × '+i.qty+' — R$ '+Number(i.price*i.qty).toFixed(2).replace('.',',')+'</div>';}).join('');
     var brindeHtml=p.brinde?'<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:6px">🎁 Brinde: '+p.brinde+'</div>':'';
     var waBtn='<a href="https://wa.me/5551982159719?text='+waMsgRaw+'" target="_blank" style="display:inline-flex;align-items:center;gap:7px;background:#25D366;color:#fff;padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;text-decoration:none">Dúvidas</a>';
-    var pagarBtn=p.status==='pendente'?
-      '<button onclick="repagarPedido('+p.id+')" style="background:var(--pk);color:#fff;border:none;padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:Raleway,sans-serif">Pagar</button>':'';
-    var cancelBtn=p.status==='pendente'?
-      '<button onclick="cancelarPedido('+p.id+')" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:Raleway,sans-serif">Cancelar</button>':'';
-    html+='<div style="background:#fff;border-radius:18px;padding:24px 28px;box-shadow:var(--sh);margin-bottom:18px;border-left:4px solid '+sc+'">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">';
-    html+='<div><span style="font-size:12px;color:var(--gr);font-weight:600">'+code+'</span>';
-    html+='<div style="font-size:20px;font-weight:700;color:var(--pk)">'+total+'</div>';
-    html+='<div style="font-size:12px;color:var(--gr)">'+date+'</div></div>';
-    html+='<span style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'55;padding:5px 14px;border-radius:50px;font-size:12px;font-weight:700">'+sl+'</span></div>';
-    html+='<div style="background:var(--pkb);border-radius:10px;padding:12px;margin-bottom:14px">';
-    html+='<div style="font-size:11px;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Itens</div>';
-    html+=itemsHtml+brindeHtml+'</div>';
-    html+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+pagarBtn+waBtn+cancelBtn+'</div></div>';
-  });
+    var pagarBtn=p.status==='pendente'?'<button onclick="repagarPedido('+p.id+')" style="background:var(--pk);color:#fff;border:none;padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:Raleway,sans-serif">Pagar</button>':'';
+    var cancelBtn=p.status==='pendente'?'<button onclick="cancelarPedido('+p.id+')" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:9px 18px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:Raleway,sans-serif">Cancelar</button>':'';
+    var h='<div style="background:#fff;border-radius:18px;padding:24px 28px;box-shadow:var(--sh);margin-bottom:18px;border-left:4px solid '+sc+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">';
+    h+='<div><span style="font-size:12px;color:var(--gr);font-weight:600">'+code+'</span>';
+    h+='<div style="font-size:20px;font-weight:700;color:var(--pk)">'+total+'</div>';
+    h+='<div style="font-size:12px;color:var(--gr)">'+date+'</div></div>';
+    h+='<span style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'55;padding:5px 14px;border-radius:50px;font-size:12px;font-weight:700">'+sl+'</span></div>';
+    h+='<div style="background:var(--pkb);border-radius:10px;padding:12px;margin-bottom:14px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Itens</div>';
+    h+=itemsHtml+brindeHtml+'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+pagarBtn+waBtn+cancelBtn+'</div></div>';
+    return h;
+  }
+  var html='';
+  ativos.forEach(function(p){html+=buildPedidoCard(p);});
+  // Seção colapsável de cancelados/recusados
+  if(inativos.length){
+    html+='<div style="margin-top:8px">';
+    html+='<button onclick="var s=document.getElementById(\'ped-inativos\');var ico=document.getElementById(\'ped-ico\');if(s.style.display===\'none\'){s.style.display=\'block\';ico.textContent=\'▲\';}else{s.style.display=\'none\';ico.textContent=\'▼\';}" style="background:none;border:1px solid rgba(239,68,68,.3);color:#ef4444;padding:8px 18px;border-radius:50px;font-size:13px;font-weight:700;cursor:pointer;font-family:Raleway,sans-serif;display:flex;align-items:center;gap:8px">Cancelados / Recusados ('+inativos.length+') <span id="ped-ico">▼</span></button>';
+    html+='<div id="ped-inativos" style="display:none;margin-top:12px">';
+    inativos.forEach(function(p){html+=buildPedidoCard(p);});
+    html+='</div></div>';
+  }
   el.innerHTML=html;
 }
 async function repagarPedido(id){
@@ -1797,7 +1815,18 @@ async function repagarPedido(id){
   var stripeOk=await startStripeCheckout(p);
   if(!stripeOk)showToast('Erro ao abrir o pagamento. Tente novamente.','error');
 }
-async function cancelarPedido(id){showConfirm('Cancelar Pedido','Tem certeza?',async function(){const idx=pedidos.findIndex(x=>x.id===id);if(idx===-1)return;pedidos[idx].status='cancelado';const p=pedidos[idx];try{await sb.from('pnm_pedidos').upsert({id:p.id,email:p.userId||curUser.email,data:p});showToast('❌ Pedido '+(p.orderCode||'')+' cancelado.');}catch(e){console.warn(e);showToast('Erro ao cancelar.');}renderPedidos();});}
+async function cancelarPedido(id){showConfirm('Cancelar Pedido','Tem certeza?',async function(){
+  if(!curUser||!curUser.token){showToast('Sessão inválida.','error');return;}
+  try{
+    var d=await efPost('cancel-order',{token:curUser.token,pedidoId:id});
+    if(!d.ok){showToast(d.error||'Erro ao cancelar.','error');return;}
+    var idx=pedidos.findIndex(function(x){return x.id===id;});
+    if(idx!==-1)pedidos[idx].status='cancelado';
+    var p=pedidos[idx>=0?idx:0];
+    showToast('❌ Pedido '+(p&&p.orderCode||'')+' cancelado.');
+  }catch(e){console.warn('cancelarPedido:',e);showToast('Erro ao cancelar.','error');}
+  renderPedidos();
+});}
 
 var pedidosLoading=false,pedidosError=null;
 let allMgrPedidos=[],mgrPedidosMap={},mgrPedidosFilter='todos';
