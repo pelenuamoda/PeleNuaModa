@@ -996,7 +996,7 @@ async function loadAll(){
   if(tsac){try{subAdultCats=JSON.parse(tsac);}catch(e){}}
   if(curUser){
     const f=users.find(u=>u.email===curUser.email);
-    if(f){var tok=curUser.token;curUser=f;if(tok)curUser.token=tok;localStorage.setItem('pnm_user',JSON.stringify(curUser));}
+    if(f){var tok=curUser.token;curUser=f;delete curUser.senha;delete curUser.senha_hash;delete curUser.cpf;if(tok)curUser.token=tok;localStorage.setItem('pnm_user',JSON.stringify(curUser));}
   }
   const allIds=[...prods,...aProds].map(p=>p.id);
   favs=favs.filter(id=>allIds.includes(id));saveLS('pnm_favs',favs);
