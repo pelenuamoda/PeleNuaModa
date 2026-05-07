@@ -1031,7 +1031,7 @@ function startRealtime(){
     users=await getUsers();
     if(curUser){
       const f=users.find(u=>u.email===curUser.email);
-      if(f){curUser=f;localStorage.setItem('pnm_user',JSON.stringify(f));}
+      if(f){var rt=curUser.token;curUser=f;delete curUser.senha;delete curUser.senha_hash;delete curUser.cpf;if(rt)curUser.token=rt;localStorage.setItem('pnm_user',JSON.stringify(curUser));}
     }
     updStats();if(mgrLogged)renderUsers();
   }).subscribe();
