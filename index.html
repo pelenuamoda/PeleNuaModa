@@ -1103,6 +1103,18 @@ function showPage(p){
     renderPedidos();
     loadPedidos().then(function(){
       pedidosLoading=false;
+      // Se voltamos de um pagamento bem-sucedido e o webhook ainda não atualizou o DB,
+      // preserva o status 'pago' localmente e agenda um recheck automático em 6s
+      if(window._justPaidOrder){
+        var jidx=pedidos.findIndex(function(x){return (x.orderCode||'')=== window._justPaidOrder;});
+        if(jidx!==-1&&pedidos[jidx].status==='pendente'){
+          pedidos[jidx].status='pago'; // mantém otimista enquanto webhook processa
+          setTimeout(function(){
+            loadPedidos().then(function(){renderPedidos();}).catch(function(){});
+          },6000);
+        }
+        window._justPaidOrder=null;
+      }
       renderPedidos();
     }).catch(function(e){
       pedidosLoading=false;
@@ -1645,7 +1657,14 @@ function checkPaymentReturn(){
   var pay=params.get('payment'),ord=params.get('order');
   if(!pay)return;
   history.replaceState(null,'',location.pathname);
-  if(pay==='success'){showToast('Pagamento confirmado! Pedido '+ord+' pago.','success');setTimeout(function(){showPage('pedidos');},900);}
+  if(pay==='success'){
+    // Marca o pedido como pago localmente de imediato (não espera o webhook)
+    var pidx=pedidos.findIndex(function(p){return (p.orderCode||'')=== ord||(String(p.id)===ord);});
+    if(pidx!==-1)pedidos[pidx].status='pago';
+    window._justPaidOrder=ord; // sinaliza para showPage preservar o status otimista
+    showToast('Pagamento confirmado! Pedido '+ord+'.','success');
+    setTimeout(function(){showPage('pedidos');},900);
+  }
   else if(pay==='cancel'){showToast('Pagamento cancelado. Pedido '+ord+' segue pendente.','warning');setTimeout(function(){showPage('pedidos');},900);}
 }
 function openResetModal(){
@@ -1720,13 +1739,17 @@ async function checkout(itemsOverride){
     var d=await efPost('place-order',{token:curUser.token,items:itemsToBuy.map(function(x){return{id:x.id,qty:x.qty};}),pendingReward:pendingReward?pendingReward.name:null});
     if(!d.ok){showToast(d.error||'Erro ao registrar pedido.','error');return;}
     var pedido=d.pedido;
-    // Só limpa carrinho/brinde se for checkout completo
+    // Remove do carrinho os itens comprados (completo ou parcial)
     if(!itemsOverride){
-      cart=[];saveLS('pnm_cart',cart);
-      document.getElementById('cart-c').textContent=0;
-      var c2=document.getElementById('cart-c2');if(c2)c2.textContent=0;
-      pendingReward=null;localStorage.removeItem('pnm_pendingReward');
+      cart=[];pendingReward=null;localStorage.removeItem('pnm_pendingReward');
+    }else{
+      var boughtIds=itemsOverride.map(function(x){return String(x.id);});
+      cart=cart.filter(function(x){return boughtIds.indexOf(String(x.id))===-1;});
     }
+    saveLS('pnm_cart',cart);
+    var cnt=cart.reduce(function(s,x){return s+x.qty;},0);
+    document.getElementById('cart-c').textContent=cnt;
+    var c2b=document.getElementById('cart-c2');if(c2b)c2b.textContent=cnt;
     pedidos.unshift(pedido);pedidosLoading=false;pedidosError=null;
     showToast('Abrindo pagamento...','loading');
     var stripeOk=await startStripeCheckout(pedido);
