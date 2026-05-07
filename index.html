@@ -386,13 +386,22 @@ footer a{color:var(--pkl);text-decoration:none;cursor:pointer;}
 <div class="mo" id="mo-reset">
   <div class="mb wht" style="max-width:440px;text-align:left">
     <h2 style="margin-bottom:4px;text-align:center">Redefinir Senha</h2>
-    <p style="text-align:center;color:var(--gr);font-size:13px;margin-bottom:20px">Confirme seu e-mail e CPF cadastrados para criar uma nova senha.</p>
-    <div class="fd" style="margin-bottom:12px"><label>E-mail</label><input type="email" id="reset-email" placeholder="seu@email.com"></div>
-    <div class="fd" style="margin-bottom:12px"><label>CPF</label><input type="text" id="reset-cpf" placeholder="000.000.000-00" oninput="maskCPF(this)" maxlength="14"></div>
-    <div class="fd" style="margin-bottom:12px"><label>Nova senha</label><input type="password" id="reset-nova" placeholder="Minimo 8 caracteres"></div>
-    <div class="fd" style="margin-bottom:18px"><label>Confirmar nova senha</label><input type="password" id="reset-nova2" placeholder="Repita a nova senha"></div>
-    <button onclick="resetByCpf()" class="bf" style="margin-bottom:8px">Redefinir Senha</button>
+    <p style="text-align:center;color:var(--gr);font-size:13px;margin-bottom:20px">Digite seu e-mail e enviaremos um link para criar uma nova senha.</p>
+    <div class="fd" style="margin-bottom:18px"><label>E-mail</label><input type="email" id="reset-email" placeholder="seu@email.com"></div>
+    <button onclick="requestPasswordReset()" class="bf" style="margin-bottom:8px">Enviar link de redefinicao</button>
     <button onclick="closeM('mo-reset')" class="bno" style="width:100%">Cancelar</button>
+  </div>
+</div>
+
+<div class="mo" id="mo-reset-confirm">
+  <div class="mb wht" style="max-width:440px;text-align:left">
+    <h2 style="margin-bottom:4px;text-align:center">Nova Senha</h2>
+    <p style="text-align:center;color:var(--gr);font-size:13px;margin-bottom:20px">Escolha uma nova senha para sua conta.</p>
+    <div class="fd" style="margin-bottom:12px"><label>Nova senha</label><input type="password" id="rc-nova" placeholder="Minimo 8 caracteres"></div>
+    <div class="fd" style="margin-bottom:8px"><label>Confirmar nova senha</label><input type="password" id="rc-nova2" placeholder="Repita a nova senha"></div>
+    <div id="rc-err" style="display:none;color:#ef4444;font-size:13px;margin-bottom:12px"></div>
+    <button onclick="confirmPasswordReset()" class="bf" style="margin-bottom:8px">Salvar Nova Senha</button>
+    <button onclick="closeM('mo-reset-confirm')" class="bno" style="width:100%">Cancelar</button>
   </div>
 </div>
 
@@ -931,6 +940,8 @@ footer a{color:var(--pkl);text-decoration:none;cursor:pointer;}
 <script>const SUPA_URL='https://brckyuxjufcchribzefe.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJyY2t5dXhqdWZjY2hyaWJ6ZWZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1OTUyNTQsImV4cCI6MjA5MDE3MTI1NH0.-Mt-GL3mjuVn9lifuGYI2oPEjq2fE6Gh7FLZEb-lr9g';
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);
+const EF_BASE=SUPA_URL+'/functions/v1';
+async function efPost(fn,body){var r=await fetch(EF_BASE+'/'+fn,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},body:JSON.stringify(body)});return r.json();}
 
 async function dbGet(t){const{data,error}=await sb.from(t).select('*');if(error){console.warn(t,error);return[];}return data;}
 async function dbUpsert(t,row){const{error}=await sb.from(t).upsert(row);if(error)console.warn('upsert',t,error);}
@@ -961,7 +972,7 @@ let favs=JSON.parse(localStorage.getItem('pnm_favs')||'[]');
 let cart=JSON.parse(localStorage.getItem('pnm_cart')||'[]');
 let curUser=JSON.parse(localStorage.getItem('pnm_user')||'null');
 let pendingReward=JSON.parse(localStorage.getItem('pnm_pendingReward')||'null');
-let mgrLogged=false,newProdImgs=[],editProdImgs=[],tmpAv=null,adultOk=false;
+let mgrLogged=false,newProdImgs=[],editProdImgs=[],tmpAv=null,adultOk=false,resetToken=null;
 let curSlide=0,slideTimer=null,cdInterval=null;
 let catH='all',catP='all';
 let confirmCb=null,avMode='user',editSlId=null,rwIdx=-1,pendingRedeemId=null;
@@ -985,7 +996,7 @@ async function loadAll(){
   if(tsac){try{subAdultCats=JSON.parse(tsac);}catch(e){}}
   if(curUser){
     const f=users.find(u=>u.email===curUser.email);
-    if(f){curUser=f;localStorage.setItem('pnm_user',JSON.stringify(f));}
+    if(f){var tok=curUser.token;curUser=f;if(tok)curUser.token=tok;localStorage.setItem('pnm_user',JSON.stringify(curUser));}
   }
   const allIds=[...prods,...aProds].map(p=>p.id);
   favs=favs.filter(id=>allIds.includes(id));saveLS('pnm_favs',favs);
@@ -997,6 +1008,7 @@ async function loadAll(){
   const cartCnt=cart.reduce((s,x)=>s+x.qty,0);document.getElementById('cart-c').textContent=cartCnt;const cartC2=document.getElementById('cart-c2');if(cartC2)cartC2.textContent=cartCnt;
   startRealtime();
   checkPaymentReturn();
+  checkResetReturn();
 }
 
 function startRealtime(){
@@ -1465,12 +1477,18 @@ function updStats(){
 
 function openGModal(){document.getElementById('mg-u').value='';document.getElementById('mg-p').value='';openM('mo-glogin');setTimeout(()=>document.getElementById('mg-u').focus(),120);}
 async function loginManager(){
-  const u=document.getElementById('mg-u').value.trim(),p=document.getElementById('mg-p').value;
-  showToast('⏳ Verificando...');
-  const{data}=await sb.from('pnm_users').select('data').eq('email',u).maybeSingle();
-  if(!data||data.data.senha!==p){showToast('❌ Usuário ou senha inválidos!');document.getElementById('mg-p').value='';return;}
-  const usr=data.data;if(usr.role!=='gerente'){showToast('❌ Sem permissão de gerente!');return;}
-  mgrLogged=true;document.body.classList.add('gm');curUser=usr;localStorage.setItem('pnm_user',JSON.stringify(usr));closeM('mo-glogin');showPage('manager');showToast('🟣 Bem-vinda, '+usr.nome+'!');
+  var u=(document.getElementById('mg-u').value||'').trim(),p=document.getElementById('mg-p').value||'';
+  if(!u||!p){showToast('Preencha os campos!');return;}
+  showToast('Verificando...','loading');
+  try{
+    var d=await efPost('auth-login',{email:u.toLowerCase(),senha:p});
+    if(!d.ok){showToast(d.error||'Usuario ou senha invalidos!','error');document.getElementById('mg-p').value='';return;}
+    if(d.user.role!=='gerente'){showToast('Sem permissao de gerente!','error');return;}
+    curUser=Object.assign({},d.user,{token:d.token});
+    localStorage.setItem('pnm_user',JSON.stringify(curUser));
+    mgrLogged=true;document.body.classList.add('gm');closeM('mo-glogin');showPage('manager');
+    showToast('Bem-vinda, '+curUser.nome+'!','success');
+  }catch(e){console.warn('loginManager:',e);showToast('Erro de conexao. Tente novamente.','error');}
 }
 function logoutManager(){mgrLogged=false;document.body.classList.remove('gm');showPage('home');showToast('Voltou ao modo cliente.');}
 function renderMgr(){renderProdTbl();updStats();renderMgrSlides();renderUsers();renderRewardsList();populateCatSelects();loadAndRenderMgrPedidos();}
@@ -1535,23 +1553,40 @@ async function registerUser(){
   if(senha!==senha2){var e=document.getElementById('err-r-senha2');if(e)e.style.display='block';var el=document.getElementById('r-senha2');if(el)el.style.borderColor='#ef4444';valid2=false;}
   if(!valid2)return;
   if(data){const ag=(new Date()-new Date(data))/(1000*60*60*24*365.25);if(ag<18){showToast('Necessário 18+ anos!');return;}}
-  showToast('⏳ Verificando...');
-  const{data:ex}=await sb.from('pnm_users').select('email').eq('email',email).maybeSingle();if(ex){showToast('❌ E-mail já cadastrado!');return;}
-  const{data:cpfEx}=await sb.from('pnm_users').select('email').filter('data->>cpf','eq',cpf).maybeSingle();if(cpfEx){showToast('❌ CPF já cadastrado!');return;}
-  const u={nome,sob,email,cpf,senha,tel,addr,data,pts:0,lastDaily:null,fidNick:'Membro',fidBg:null,avatar:null,role:'cliente'};
-  await upsertUser(u);curUser=u;localStorage.setItem('pnm_user',JSON.stringify(u));showToast('🎉 Bem-vinda, '+nome+'!');renderAcc();
+  showToast('Verificando...','loading');
+  try{
+    var d=await efPost('auth-register',{nome,sob,email:email.toLowerCase(),cpf,senha,tel,addr,data});
+    if(!d.ok){showToast(d.error||'Erro ao cadastrar.','error');return;}
+    curUser=Object.assign({},d.user,{token:d.token});
+    localStorage.setItem('pnm_user',JSON.stringify(curUser));
+    showToast('Bem-vinda, '+nome+'!','success');renderAcc();
+  }catch(e){console.warn('registerUser:',e);showToast('Erro de conexao. Tente novamente.','error');}
 }
 async function loginUser(){
-  const email=document.getElementById('l-email').value.trim(),senha=document.getElementById('l-senha').value;
-  if(!email||!senha){showToast('Preencha os campos!');return;}showToast('⏳ Verificando...');
-  const{data}=await sb.from('pnm_users').select('data').eq('email',email).maybeSingle();
-  if(!data){showToast('❌ E-mail não cadastrado.');const errEl=document.getElementById('login-err');if(errEl){errEl.textContent='E-mail não encontrado.';errEl.style.display='block';}return;}
-  if(data.data.senha!==senha){showToast('❌ Senha incorreta.');const errEl=document.getElementById('login-err');if(errEl){errEl.textContent='Senha incorreta.';errEl.style.display='block';}const lnk=document.getElementById('forgot-link');if(lnk)lnk.style.display='block';return;}
-  const errEl=document.getElementById('login-err');if(errEl)errEl.style.display='none';
-  curUser=data.data;localStorage.setItem('pnm_user',JSON.stringify(curUser));
-  showToast('💕 Bem-vinda, '+curUser.nome+'!');renderAcc();
+  var email=(document.getElementById('l-email').value||'').trim(),senha=document.getElementById('l-senha').value||'';
+  if(!email||!senha){showToast('Preencha os campos!');return;}
+  showToast('Verificando...','loading');
+  var errEl=document.getElementById('login-err');if(errEl)errEl.style.display='none';
+  var lnk=document.getElementById('forgot-link');if(lnk)lnk.style.display='none';
+  try{
+    var d=await efPost('auth-login',{email:email.toLowerCase(),senha:senha});
+    if(!d.ok){
+      var msg=d.error||'Credenciais invalidas.';
+      showToast(msg,'error');
+      if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+      if(lnk)lnk.style.display='block';
+      return;
+    }
+    curUser=Object.assign({},d.user,{token:d.token});
+    localStorage.setItem('pnm_user',JSON.stringify(curUser));
+    document.getElementById('l-email').value='';document.getElementById('l-senha').value='';
+    showToast('Bem-vinda, '+curUser.nome+'!','success');renderAcc();
+  }catch(e){console.warn('loginUser:',e);showToast('Erro de conexao. Tente novamente.','error');}
 }
-function logoutUser(){curUser=null;pedidos=[];localStorage.removeItem('pnm_user');renderAcc();showToast('Até logo! 👋');}
+async function logoutUser(){
+  if(curUser&&curUser.token){try{await efPost('auth-logout',{token:curUser.token});}catch(e){console.warn('logout:',e);}}
+  curUser=null;pedidos=[];localStorage.removeItem('pnm_user');renderAcc();showToast('Ate logo!');
+}
 
 function renderFid(){
   if(!curUser)return;const pts=curUser.pts||0;
@@ -1618,19 +1653,60 @@ function openResetModal(){
   if(re&&em.trim())re.value=em.trim();
   openM('mo-reset');
 }
-// SEGURANÇA (2026-04-30): resetByCpf desativado.
-// O fluxo antigo aceitava qualquer pessoa que soubesse email+CPF
-// trocar a senha sem confirmação. CPFs vazam com facilidade no
-// Brasil, então isso virou sequestro de conta trivial.
-// Em breve: fluxo seguro por email+token. Por ora, redirecionar
-// cliente para WhatsApp da gerente.
-async function resetByCpf(){
-  showToast('Redefinicao por CPF temporariamente desativada por seguranca. Fale com a gerente.','warning');
-  setTimeout(function(){
-    var url='https://wa.me/5551982159719?text='+encodeURIComponent('Ola! Preciso redefinir minha senha do site Pele Nua Moda.');
-    window.open(url,'_blank');
-    closeM('mo-reset');
-  },1500);
+function checkResetReturn(){
+  var params=new URLSearchParams(location.search);
+  var token=params.get('reset');
+  if(!token)return;
+  history.replaceState(null,'',location.pathname);
+  resetToken=token;
+  var el=document.getElementById('rc-nova');if(el)el.value='';
+  var el2=document.getElementById('rc-nova2');if(el2)el2.value='';
+  var errEl=document.getElementById('rc-err');if(errEl)errEl.style.display='none';
+  openM('mo-reset-confirm');
+}
+async function requestPasswordReset(){
+  var email=((document.getElementById('reset-email')||{}).value||'').trim();
+  if(!email||!/^[^@]+@[^@]+\.[^@]+$/.test(email)){showToast('Informe um e-mail valido.','warning');return;}
+  showToast('Enviando link...','loading');
+  try{
+    await fetch(SUPA_URL+'/functions/v1/auth-reset-request',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
+      body:JSON.stringify({email:email.toLowerCase()})
+    });
+  }catch(e){console.warn('reset-request:',e);}
+  showToast('Se este e-mail estiver cadastrado, voce recebera um link em breve.','success');
+  closeM('mo-reset');
+}
+async function confirmPasswordReset(){
+  if(!resetToken){showToast('Link invalido. Solicite um novo.','error');return;}
+  var nova=((document.getElementById('rc-nova')||{}).value||'');
+  var nova2=((document.getElementById('rc-nova2')||{}).value||'');
+  var errEl=document.getElementById('rc-err');
+  if(errEl)errEl.style.display='none';
+  if(!nova||nova.length<8){if(errEl){errEl.textContent='Senha deve ter pelo menos 8 caracteres.';errEl.style.display='block';}return;}
+  if(nova!==nova2){if(errEl){errEl.textContent='As senhas nao coincidem.';errEl.style.display='block';}return;}
+  showToast('Redefinindo senha...','loading');
+  try{
+    var r=await fetch(SUPA_URL+'/functions/v1/auth-reset-confirm',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY,'apikey':SUPA_KEY},
+      body:JSON.stringify({token:resetToken,novaSenha:nova})
+    });
+    var d=await r.json();
+    if(!r.ok||!d.ok){
+      var msg=d.error||'Erro ao redefinir senha. O link pode ter expirado.';
+      if(errEl){errEl.textContent=msg;errEl.style.display='block';}
+      showToast(msg,'error');return;
+    }
+    resetToken=null;
+    closeM('mo-reset-confirm');
+    showToast('Senha redefinida! Faca login.','success');
+    showPage('register');
+  }catch(e){
+    console.warn('reset-confirm:',e);
+    showToast('Erro de conexao. Tente novamente.','error');
+  }
 }
 async function checkout(){
   if(!curUser){showToast('Faça login primeiro!');showPage('register');return;}if(!cart.length){showToast('Carrinho vazio!');return;}showToast('Registrando pedido...');
