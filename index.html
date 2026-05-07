@@ -1658,14 +1658,29 @@ function checkPaymentReturn(){
   if(!pay)return;
   history.replaceState(null,'',location.pathname);
   if(pay==='success'){
-    // Marca o pedido como pago localmente de imediato (não espera o webhook)
-    var pidx=pedidos.findIndex(function(p){return (p.orderCode||'')=== ord||(String(p.id)===ord);});
-    if(pidx!==-1)pedidos[pidx].status='pago';
-    window._justPaidOrder=ord; // sinaliza para showPage preservar o status otimista
+    // Limpa o carrinho agora que o pagamento foi confirmado
+    var pendClear=null;
+    try{pendClear=JSON.parse(localStorage.getItem('pnm_pending_clear'));}catch(e){}
+    localStorage.removeItem('pnm_pending_clear');
+    if(pendClear==='all'){
+      cart=[];pendingReward=null;localStorage.removeItem('pnm_pendingReward');
+    }else if(Array.isArray(pendClear)&&pendClear.length){
+      cart=cart.filter(function(x){return pendClear.indexOf(String(x.id))===-1;});
+    }
+    saveLS('pnm_cart',cart);
+    var ccnt=cart.reduce(function(s,x){return s+x.qty;},0);
+    var ccEl=document.getElementById('cart-c');if(ccEl)ccEl.textContent=ccnt;
+    var cc2El=document.getElementById('cart-c2');if(cc2El)cc2El.textContent=ccnt;
+    // Sinaliza para showPage preservar o status 'pago' se o webhook ainda não chegou
+    window._justPaidOrder=ord;
     showToast('Pagamento confirmado! Pedido '+ord+'.','success');
     setTimeout(function(){showPage('pedidos');},900);
   }
-  else if(pay==='cancel'){showToast('Pagamento cancelado. Pedido '+ord+' segue pendente.','warning');setTimeout(function(){showPage('pedidos');},900);}
+  else if(pay==='cancel'){
+    localStorage.removeItem('pnm_pending_clear'); // mantém carrinho intacto no cancelamento
+    showToast('Pagamento cancelado. Pedido '+ord+' segue pendente.','warning');
+    setTimeout(function(){showPage('pedidos');},900);
+  }
 }
 function openResetModal(){
   var em=(document.getElementById('l-email')||{}).value||'';
@@ -1739,17 +1754,10 @@ async function checkout(itemsOverride){
     var d=await efPost('place-order',{token:curUser.token,items:itemsToBuy.map(function(x){return{id:x.id,qty:x.qty};}),pendingReward:pendingReward?pendingReward.name:null});
     if(!d.ok){showToast(d.error||'Erro ao registrar pedido.','error');return;}
     var pedido=d.pedido;
-    // Remove do carrinho os itens comprados (completo ou parcial)
-    if(!itemsOverride){
-      cart=[];pendingReward=null;localStorage.removeItem('pnm_pendingReward');
-    }else{
-      var boughtIds=itemsOverride.map(function(x){return String(x.id);});
-      cart=cart.filter(function(x){return boughtIds.indexOf(String(x.id))===-1;});
-    }
-    saveLS('pnm_cart',cart);
-    var cnt=cart.reduce(function(s,x){return s+x.qty;},0);
-    document.getElementById('cart-c').textContent=cnt;
-    var c2b=document.getElementById('cart-c2');if(c2b)c2b.textContent=cnt;
+    // Agenda a limpeza do carrinho — executada APÓS retorno do Stripe com payment=success
+    // Se o pagamento for cancelado, o carrinho permanece intacto
+    var pendClear=itemsOverride?itemsOverride.map(function(x){return String(x.id);}):'all';
+    localStorage.setItem('pnm_pending_clear',JSON.stringify(pendClear));
     pedidos.unshift(pedido);pedidosLoading=false;pedidosError=null;
     showToast('Abrindo pagamento...','loading');
     var stripeOk=await startStripeCheckout(pedido);
